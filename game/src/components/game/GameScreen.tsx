@@ -7,7 +7,6 @@ import FootballerCanvas from "./FootballerCanvas";
 import MatchClockButton from "./MatchClockButton";
 import ShootBand from "./ShootBand";
 import TeamSelect from "./TeamSelect";
-import TradeTicker from "@/components/trade/TradeTicker";
 import { useReplay } from "@/context/ReplayProvider";
 import { useTrade } from "@/context/TradeProvider";
 import { useMatchClock } from "@/hooks/use-match-clock";
@@ -33,7 +32,8 @@ export default function GameScreen() {
   const { trade } = useTrade();
 
   const clock = useMatchClock();
-  const { state, runId, scored, side, trading, play, end, shoot } = useRun();
+  const { state, runId, scored, side, trading, showing, ready, play, end, shoot } =
+    useRun();
 
   /* No replay, no match. Nothing is read from the URL, so this route is reachable
      only by being sent here from the reel — and a hard reload is a new process,
@@ -73,15 +73,11 @@ export default function GameScreen() {
         team="sanlorenzo"
       />
 
-      {/* The position, on the curtains only — the same condition the curtain itself
-          is drawn on.
-
-          The money is settled between runs, never during one: it is bought on the
-          team-select curtain and cashed out on the game-over one, and while the ball
-          is moving nothing is happening to it at all. So the badge goes when the ball
-          does. A figure hanging over live play would be stale by definition, and
-          competing with the game for the only thing the player has to spare. */}
-      <TradeTicker show={curtain} />
+      {/* The position is not drawn here. It belongs to the curtain's one slot — see
+          `TeamSelect`, which shows the spinner, then the figure, then the buttons, in
+          the same place and in that order. It used to hang at the top of the screen,
+          which put the answer somewhere the player was not looking and left it up
+          alongside a spinner still turning for the same trade. */}
 
       <MatchClockButton {...clock} />
 
@@ -128,10 +124,18 @@ export default function GameScreen() {
               gated on `isFavourite`, which reads the same market — it is simply not on
               show. Put it back by rendering `@/components/game/OddsBoard` here. */}
 
+          {/* The curtain's one slot: the spinner while the trade is in flight, the
+              figure it settled at, and then — and only then — something to press.
+              Identical at both ends of the run, which is why it is one component and
+              not two. `ended` is what tells it the choice on the far side is a
+              restart rather than a kickoff, and which side to restart for. */}
           <TeamSelect
             teams={teams}
             trading={trading}
+            showing={showing}
             closing={trade.status === "closing"}
+            replay={state === "ended" ? side : null}
+            ready={ready}
             onPick={(option) => void play(option)}
           />
         </div>

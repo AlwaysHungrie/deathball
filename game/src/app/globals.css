@@ -12,6 +12,16 @@
      the same job, the other direction — so it wants the same lift off the
      background that the red already has. */
   --cash: #3ddc84;
+  /* The P&L, in brackets on the trade badge — the one number a run is actually
+     played for, so it is the brightest thing on it.
+
+     --blood is a deep brick red: right for a border, and right for a large figure,
+     but as ten-pixel text on black it goes muddy and reads as disabled rather than
+     as a loss. This is the same red taken up to where small text can carry it.
+     --cash needs no such partner — it is already bright — so the green here is
+     itself, and the pair stay in step. */
+  --blood-bright: #ff5c47;
+  --cash-bright: var(--cash);
 }
 
 @theme inline {
@@ -20,6 +30,8 @@
   --color-pitch: var(--pitch);
   --color-blood: var(--blood);
   --color-cash: var(--cash);
+  --color-blood-bright: var(--blood-bright);
+  --color-cash-bright: var(--cash-bright);
   --font-pixel: var(--font-press-start);
 }
 

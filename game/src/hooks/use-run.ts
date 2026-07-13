@@ -33,11 +33,30 @@ export function useRun() {
      lets the badge settle, and the buttons must not flash back for that beat. */
   const [buying, setBuying] = useState(false);
 
+  /* The beat after a trade settles, on either curtain: the spinner is gone, the
+     badge is up, and nothing else is — no buttons at kickoff, no restart at the
+     whistle. It is what makes the trade the only thing on screen for as long as it
+     takes to read it.
+
+     A flag rather than a read of the trade's status because it outlives the trade
+     landing by RECEIPT_MS, and because both ends of the run need the same beat from
+     two different statuses (`open` at kickoff, `closed` at the whistle). One flag,
+     one meaning: the money is being shown. */
+  const [showing, setShowing] = useState(false);
+
+  /* The restart is on offer. Only ever true on the game-over curtain, and only after
+     the receipt has had its beat — the card stays up underneath it, so this is not
+     "the receipt is done" but "there is now also something to press".
+
+     Its own flag rather than a read of `!trading`, which goes false the instant the
+     sell lands: the button would appear the moment the number did, and the beat that
+     makes the number readable would buy nothing. */
+  const [ready, setReady] = useState(false);
+
   const {
     trade,
     open: openPosition,
     close: closePosition,
-    abandon: abandonPosition,
     reset: resetTrade,
   } = useTrade();
 
@@ -50,8 +69,12 @@ export function useRun() {
    * same replay is a second position rather than a free ride on the first.
    *
    * The buy is awaited, so the ball does not move until the swap has confirmed on
-   * chain. The -$0.05 the player watches land is therefore a settled trade, and the
+   * chain. The figure the player watches land is therefore a settled trade, and the
    * position the final whistle sells is certain to exist.
+   *
+   * Then the receipt holds the curtain on its own for a beat, because a number that
+   * is torn away as it finishes counting is a number nobody read. Only after it does
+   * the pitch take the screen.
    *
    * It cannot throw — a trade that fails reports itself on the badge and the run
    * goes ahead anyway. The football is the game; the money is the wager on it, and
@@ -61,28 +84,39 @@ export function useRun() {
     async (forSide: Side) => {
       // The reel's own guard, here: the buttons are gone while this runs, but a
       // double-tap can still land two calls before React has repainted, and each
-      // would buy its own $0.05 while only one could ever be sold.
+      // would buy its own stake while only one could ever be sold.
       if (buying) return;
       setBuying(true);
 
-      // // Last run's badge goes with it. It says what the *previous* position closed
-      // // at, and leaving it up through the next buy would have it contradicting the
-      // // one now being opened.
-      // resetTrade();
+      /* The last run's restart goes with its receipt. Both are still on screen — this
+         is the button that was just pressed — and neither belongs to the run now
+         starting. */
+      setReady(false);
+      setShowing(false);
+
+      /* Last run's badge goes with it. It says what the *previous* position closed
+         at, and leaving it up through the next buy would have it contradicting the
+         one now being opened. */
+      resetTrade();
 
       await openPosition();
 
-      // /* Let the badge land before the pitch takes the screen back. The counter
-      //    rolls for 12 steps at 40ms; without this the -$0.05 would be torn away at
-      //    the exact moment it finished counting, and the player would watch a number
-      //    move and never see what it moved to. */
-      // await new Promise((settle) => setTimeout(settle, 900));
+      /* Bought — so the spinner comes down and the receipt goes up in the space it
+         was occupying. The two never share the screen: `buying` off and `showing`
+         on is a single render, so the swap is a replacement rather than a moment
+         where both are up or neither is. */
+      setBuying(false);
+      setShowing(true);
 
-      // setSide(forSide);
-      // setRunId((id) => id + 1);
-      // setScored(false);
-      // setState("playing");
-      // setBuying(false);
+      await wait(RECEIPT_MS);
+
+      // Read, and the pitch takes the screen back.
+      setShowing(false);
+
+      setSide(forSide);
+      setRunId((id) => id + 1);
+      setScored(false);
+      setState("playing");
     },
     [buying, openPosition, resetTrade],
   );
@@ -95,26 +129,20 @@ export function useRun() {
 
   const shoot = useCallback(() => setState("shooting"), []);
 
-  /* How the run ends is how the money ends.
+  /* The whistle sells the position, however the run ended.
    *
-   * A goal liquidates the position and the player gets their five cents back, plus
-   * or minus whatever the token did while the ball was in play. Dying does not: the
-   * position is abandoned where it stands, the tokens stay in the wallet unsold,
-   * and the SOL that bought them is gone.
-   *
-   * That asymmetry is the point. Without it the trade is a decoration that always
-   * pays itself back and the run is a spectator to it. With it, the goal is worth
-   * something and missing costs something — which is what a wager is.
+   * Every run liquidates: the token is sold back into the curve it came from and the
+   * player gets back whatever it did while the ball was in play. Scoring does not
+   * decide whether the trade settles, only the football does — a goal and a death
+   * both end the run and both cash it out.
    *
    * Fired from an effect on the transition into `ended`, rather than from `end`
    * itself. `end` is a stable callback the canvas stashes in a ref at mount —
    * closing over `close` there would freeze the first render's copy of it, and that
    * copy holds a stale `ticket`. The effect always sees the live one.
    *
-   * `settled` is what makes it happen exactly once. `close` changes identity as the
-   * trade's own state moves (open → closing → closed), so the effect re-runs several
-   * times per run; without the latch, each re-run would fire another sell. It is
-   * keyed to `runId` so the *next* run arms it again. */
+   * `settled` is what makes it happen exactly once. It is keyed to `runId` so the
+   * *next* run arms it again. */
   const settled = useRef(-1);
 
   useEffect(() => {
@@ -122,23 +150,44 @@ export function useRun() {
     if (settled.current === runId) return;
     settled.current = runId;
 
-    if (scored) {
-      // Never throws — a failed sell reports itself on the badge. See `close`.
-      void closePosition();
-    } else {
-      // Nothing is sent. Losing is the absence of a transaction.
-      abandonPosition();
-    }
-  }, [state, runId, scored, closePosition, abandonPosition]);
+    /* The same beat the kickoff has, and then one difference that matters.
+
+       The spinner holds the curtain alone until the sell lands, and then the receipt
+       goes up — so far, identical. But here the receipt *stays*: the run is over, and
+       what it made is the thing the player came for. The restart arrives underneath
+       it after the beat rather than in place of it, so the number is still on screen
+       while they decide whether to have another go.
+
+       At kickoff the card has to go, because the pitch needs the screen. Here nothing
+       is waiting for it, so nothing takes it away.
+
+       Never throws — a failed sell reports itself on the badge. See `close`. */
+    void (async () => {
+      await closePosition();
+
+      setShowing(true);
+      await wait(RECEIPT_MS);
+      setReady(true);
+    })();
+  }, [state, runId, closePosition]);
 
   /* Money is moving, in one direction or the other — buying at kickoff, or selling
      at the whistle. The curtain shows a spinner instead of buttons for the whole of
      it, so the two waits look like one thing: a trade, settling.
 
      `buying` is the local flag rather than `trade.status === "opening"` because it
-     also covers the beat after the swap lands (see `play`). Selling can be read
-     straight off the trade, since nothing follows it. */
+     is raised the instant the button is pressed, before the request is even out.
+     Selling can be read straight off the trade. */
   const trading = buying || trade.status === "closing";
 
-  return { state, runId, scored, side, trading, play, end, shoot };
+  return { state, runId, scored, side, trading, showing, ready, play, end, shoot };
 }
+
+/** How long the settled trade holds the curtain on its own, at both ends of the run.
+ *
+ *  Long enough to read a six-decimal figure that spends the first half-second of it
+ *  counting up to itself, and short enough that it is a beat in the game rather than
+ *  a screen in it. */
+const RECEIPT_MS = 3000;
+
+const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));

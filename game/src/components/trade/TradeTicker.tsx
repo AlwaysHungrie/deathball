@@ -8,6 +8,11 @@ import { useTrade, type Trade } from "@/context/TradeProvider";
 /**
  * The money, on screen. A figure and a colour, and nothing else.
  *
+ * It is what the wait turns into. The curtain holds a spinner while the trade is in
+ * flight and this in the same slot once it lands — see `TeamSelect`, which owns the
+ * slot and decides which of them is in it. So this places nothing itself: it is
+ * given a spot, and it drops into it.
+ *
  * Red on the way out, green on the way back — and the green is only green if the
  * player is actually up, which is the one honest thing this badge does. It is the
  * same box as the wallet balance and the match clock: bordered, dark, tabular,
@@ -36,24 +41,30 @@ import { useTrade, type Trade } from "@/context/TradeProvider";
 export default function TradeTicker({ show }: { show: boolean }) {
   const { trade } = useTrade();
 
-  /* Only on the curtains — never over live play.
+  /* Shown where the spinner was, and only once the spinner has gone.
 
-     The trade is settled *between* runs: bought on the team-select curtain,
-     cashed out on the game-over one. While the ball is moving there is nothing
-     happening to the money at all, so a badge hanging over the pitch would be a
-     stale figure competing with the game for the one thing the player has to
-     spare, which is attention. It leaves when the ball does, and comes back when
-     the ball stops.
+     The badge is not furniture hung at the top of the screen — it is what the wait
+     resolves *into*. The spinner stands in the curtain's slot while the trade is in
+     flight, and when it lands the badge takes that exact space: the player's eye is
+     already there, and the answer arrives where the question was asked. Hanging it
+     at the top of the screen instead meant the figure appeared somewhere nobody was
+     looking, next to a spinner still turning under it.
 
-     `opening` is off as well as `idle`. The badge has nothing to say until the
-     buy has settled, and mounting the wrapper early would play the drop-in
-     animation around an empty box — so the figure, when it finally arrives, would
-     appear in place with no entrance of its own. It waits, and then it drops. */
-  const on = show && trade.status !== "idle" && trade.status !== "opening";
+     So this renders in the flow of whatever places it, and `show` is the whole of
+     the decision: the caller says when, because the caller is the one that knows
+     the spinner is down. See `showing` in `use-run`.
+
+     `opening` and `closing` are excluded on top of that, belt and braces: the badge
+     has nothing to say until the chain has said it, and mounting the wrapper early
+     would play the drop-in animation around an empty box. */
+  const settled =
+    trade.status === "open" ||
+    trade.status === "closed" ||
+    trade.status === "failed";
 
   return (
     <AnimatePresence>
-      {on && (
+      {show && settled && (
         <motion.div
           /* Drops in from above and lifts back out, so it arrives like the
              curtains do rather than fading in place. */
@@ -61,10 +72,7 @@ export default function TradeTicker({ show }: { show: boolean }) {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -12 }}
           transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-          /* Above the curtain, not level with it: at the same z the badge is
-             painted over by the wash and the trade happens invisibly, which is
-             the one thing this component exists not to do. */
-          className="pointer-events-none absolute top-16 left-1/2 z-200 -translate-x-1/2"
+          className="pointer-events-none"
         >
           <Badge trade={trade} />
         </motion.div>
@@ -75,7 +83,8 @@ export default function TradeTicker({ show }: { show: boolean }) {
 
 function Badge({ trade }: { trade: Trade }) {
   switch (trade.status) {
-    /* Nothing, while the buy is in flight.
+    /* Nothing, while either leg is in flight — the spinner has the curtain to
+     * itself, and this is not rendered at all (see above).
      *
      * There used to be a badge here showing the stake — but the stake is a
      * constant, so it was a hardcoded figure standing in for a number nobody knew
@@ -84,55 +93,55 @@ function Badge({ trade }: { trade: Trade }) {
      * nothing at all. Either way the player watched `-0.005 SOL` roll up and then
      * get replaced by something that contradicted it.
      *
-     * So the badge now says nothing until the chain has told us something. What
-     * appears next is either what was actually deducted, or ERROR. */
+     * So the badge says nothing until the chain has told us something. What appears
+     * is either what actually moved, or ERROR. */
     case "opening":
+    case "closing":
       return null;
 
+    /* Bought. What the position actually cost the wallet — fees and the token
+       account's rent included, which is why it is a number off the chain and not
+       the stake constant. Negative, because it left. */
     case "open":
-      return <Box tone="loss" to={-sol(trade.lamportsIn)} />;
-
-    case "closing":
       return <Box tone="loss" to={-sol(trade.lamportsIn)} />;
 
     case "closed": {
       /* The sign of the P&L picks the colour — not the fact that money came back.
          Getting back less SOL than went out is a loss even though SOL came back,
-         and a green badge would be lying about it.
+         and a green badge would be lying about it. Grey is reserved for a position
+         that moved not at all, which has no direction to colour.
 
-         Flat is whatever the figure cannot show. The badge resolves to DECIMALS
-         places, so a P&L smaller than one unit of the last digit is a move the
-         player has no way of seeing — and colouring the badge over a change that
-         is not on screen is the interface knowing something it will not say.
-         Anything the digits *can* show gets a colour; anything they cannot is
-         grey. The threshold and the display are therefore the same decision, and
-         cannot drift apart.
+         The colour, the arrow and the figure are all read off this one number, so
+         they cannot disagree: a red box always carries a down arrow.
 
          Worth being honest about which way this usually lands: a round trip
          through a bonding curve pays pump's fee twice and the network's twice, so
          a run where the token did nothing at all comes back *red*. The player is
          betting the token moves enough to clear the spread. It mostly will not.
          That is a real bet rather than a decorative one, which is the point. */
-      const FLAT_SOL = 10 ** -DECIMALS;
       const pnl = sol(trade.pnl);
+      const stake = sol(trade.lamportsIn);
 
-      const tone =
-        Math.abs(pnl) < FLAT_SOL ? "dead" : pnl > 0 ? "gain" : "loss";
+      const tone = pnl === 0 ? "dead" : pnl > 0 ? "gain" : "loss";
 
-      return <Box tone={tone} to={sol(trade.lamportsOut)} signed />;
+      /* The SOL back, and — in brackets under it — what the run made as a share of
+         what it cost. Two different numbers, and the second is the one the run was
+         played for: the player can get 0.0071 SOL back off a 0.0073 SOL buy, and
+         without the bracket that reads as money arriving rather than money lost.
+
+         The stake goes with it, because the bracket is a percentage *of* something —
+         and that something is what the buy cost, which is the only figure the profit
+         means anything against. */
+      return (
+        <Box
+          tone={tone}
+          to={sol(trade.lamportsOut)}
+          signed
+          pnl={pnl}
+          stake={stake}
+        />
+      );
     }
-
-    /* He died, so the position was never sold: the tokens sit in the game wallet
-       and the ticket naming them is gone. The badge does not perform a settlement
-       it never made — the figure stays at what was staked, negative.
-
-       Stranded, and — unlike the version of this game that traded one fixed token
-       — not coming back. Each run buys a *different* random mint, so a later goal
-       sells only its own and cannot sweep up what past deaths left behind. The
-       badge does not say that in words, because it does not say anything in
-       words. */
-    case "lost":
-      return <Box tone="loss" to={-sol(trade.lamportsIn)} />;
 
     /* The trade call failed — the curve rejected the buy, the wallet is empty, no
        wallet is connected, the RPC fell over. This is the *only* thing on screen
@@ -175,15 +184,22 @@ const TONES = {
   dead: "border-neutral-100/40 bg-neutral-950/90 text-neutral-400",
 } as const;
 
-/** The box, and the one thing in it. */
+/** The box, and what is in it: the figure, and — on a closed position — the P&L. */
 function Box({
   tone,
   to,
   signed = false,
+  pnl,
+  stake,
 }: {
   tone: keyof typeof TONES;
   to: number;
   signed?: boolean;
+  /** What the round trip made or lost. Only a closed position has one — the buy
+      leg has nothing to compare itself against yet. */
+  pnl?: number;
+  /** What the buy cost, which is what the P&L is a percentage *of*. */
+  stake?: number;
 }) {
   return (
     <div
@@ -193,9 +209,77 @@ function Box({
       {/* Keyed on the figure, so a new one is a new counter and rolls from zero
           rather than inheriting the finished roll of the last. */}
       <Counter key={to} to={to} signed={signed} />
+
+      {/* The result of the bet, in brackets under the money that came back.
+          Bright — this is the one number the run was actually played for, and it
+          is the only thing on the badge that carries a colour of its own rather
+          than inheriting the box's.
+
+          An arrow rather than a sign. `+` and `-` are two characters that differ by
+          one stroke, at ten pixels, on a badge the player sees for three seconds;
+          an arrow is a shape, and it is read rather than parsed. It carries the
+          direction, so the figure itself is unsigned. */}
+      {pnl !== undefined && stake !== undefined && (
+        <div className={`mt-2 leading-none ${PNL_TONES[tone]}`}>
+          ({percent(pnl, stake)})
+        </div>
+      )}
     </div>
   );
 }
+
+/**
+ * What the run made, as a percentage of what it cost — with an arrow for the
+ * direction.
+ *
+ * Always a percentage, never SOL. The P&L in SOL is a figure with six leading zeros
+ * that changes in its last two digits: technically the truth, and unreadable in the
+ * three seconds the badge is up. As a share of the stake it is `2.4%`, which is the
+ * number a person actually holds in their head — and it is the honest denominator,
+ * because the stake is what was risked to get it.
+ *
+ * Significant digits rather than decimal places, because a ratio has no fixed floor
+ * to round against: `toFixed(2)` would flatten every move smaller than 0.01% to
+ * `0.00%`, and at this stake that is most of them. `toPrecision` resolves whatever
+ * it is handed — `0.0054%` on a move the SOL figure could not see at all, `3.3%` on
+ * a real one — and `Number` strips the exponent form and trailing zeros it can
+ * produce.
+ *
+ * A zero stake would make this a division by zero. It cannot happen — a position
+ * that cost nothing was never opened — but the badge answers rather than printing
+ * `Infinity%` if it ever does.
+ */
+function percent(pnl: number, stake: number): string {
+  if (!stake) return "—";
+
+  const value = (pnl / stake) * 100;
+  const magnitude = Number(Math.abs(value).toPrecision(PERCENT_DIGITS));
+
+  return `${arrow(value)}${magnitude}%`;
+}
+
+/** Up on a profit, down on a loss, and a dash when nothing moved — the direction as
+    a shape rather than as a `+`/`-`, which at ten pixels differ by a single stroke. */
+function arrow(value: number): string {
+  if (value === 0) return "—";
+  return value > 0 ? "▲" : "▼";
+}
+
+/** Significant digits in the percentage. Two is enough to tell a run that lost to
+    the spread from one that lost to the market, and few enough that the bracket
+    stays a glance rather than a read. */
+const PERCENT_DIGITS = 2;
+
+/* The bracketed P&L, brighter than the box it sits in — see `--blood-bright` in
+   globals.css for why the red needs a lift here and the green does not.
+
+   `dead` is a move too small for DECIMALS to resolve, so it stays grey rather than
+   claiming a direction the digits cannot back up. */
+const PNL_TONES = {
+  loss: "text-blood-bright",
+  gain: "text-cash-bright",
+  dead: "text-neutral-500",
+} as const;
 
 /**
  * A dollar figure that counts up to itself.

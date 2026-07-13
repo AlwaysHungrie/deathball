@@ -14,6 +14,10 @@ import type { OpenTradeResponse } from "@/app/api/trade/open/route";
  * re-renders them under the provider without remounting it, so the ticket
  * survives the trip.
  *
+ * Every run that ends closes: the whistle sells the token back into the curve it
+ * came from, whether the ball went in or not. What the player wins or loses is what
+ * the market did to it in the ninety seconds it was held, and nothing else.
+ *
  * The trade itself happens on the server. Nothing here signs anything — but it
  * does have to say *who* the server should sign for: the wallet that pays is
  * derived from the connected address, so the address is sent with the buy. It is
@@ -24,17 +28,18 @@ import type { OpenTradeResponse } from "@/app/api/trade/open/route";
 /** What the badge is showing, and what the run is doing.
  *
  *  - `idle`      — no position. Before a run, and after one is cleared.
- *  - `opening`   — the buy is in flight. The badge is on screen, ticking down.
+ *  - `opening`   — the buy is in flight. The spinner is up; the badge is not.
  *  - `open`      — bought. The run is live and the money is in the market.
- *  - `closing`   — the sell is in flight. Only ever reached by scoring.
+ *  - `closing`   — the sell is in flight. Reached by every run that ends.
  *  - `closed`    — sold. The badge shows what came back.
- *  - `lost`      — he died, so the position was never sold. The stake is gone:
- *                  the tokens sit in the wallet and the SOL that bought them does
- *                  not come back. This is the cost of missing.
  *  - `failed`    — the trade did not happen at all. Says why, and the run goes
  *                  on regardless — including when the wallet is too empty to
- *                  fund a position, which is a normal end state here rather than
- *                  an error, because deaths drain it.
+ *                  fund a position.
+ *
+ * Every run that ends liquidates, whether or not the ball went in: the whistle
+ * sells the position and the player gets back whatever the token did while it
+ * was in play. Scoring is not what settles the trade, so there is no state here
+ * for a position left unsold.
  *
  * Everything is in lamports, as strings, because that is what the server can
  * honestly say. The token is a random devnet pump.fun mint and nothing prices
@@ -52,7 +57,6 @@ export type Trade =
       pnl: string;
       mint: string;
     }
-  | { status: "lost"; lamportsIn: string; mint: string }
   | { status: "failed"; message: string };
 
 type TradeContext = {
@@ -60,18 +64,9 @@ type TradeContext = {
   /** Buy the position. Resolves when the swap has confirmed — the pitch awaits
       this, so the ball does not move over a trade still in flight. */
   open: () => Promise<void>;
-  /** Sell it. Called *only* on a goal. Never throws: a run that ends is over
+  /** Sell it, however the run ended. Never throws: a run that ends is over
       whatever the market did, and a failed sell is reported, not raised. */
   close: () => Promise<void>;
-  /**
-   * Walk away from it. Called when he dies.
-   *
-   * The position is not sold and the ticket is dropped, so the tokens stay in
-   * the wallet and the SOL spent on them is simply gone. Nothing is sent — this
-   * is the *absence* of a transaction, which is exactly what makes the goal
-   * worth something.
-   */
-  abandon: () => void;
   /** Back to `idle`, for the next run. */
   reset: () => void;
 };
@@ -95,6 +90,15 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
      not state: nothing renders it, and putting it in state would re-render the
      whole tree on open for a value only `close` ever reads. */
   const ticket = useRef<string | null>(null);
+
+  /* What the buy actually got, kept beside the ticket for the same reason and
+     read by the same caller. `close` used to recover these off `trade.status ===
+     "open"`, which made the callback depend on the trade and therefore change
+     identity every time the trade moved — and, worse, meant a close fired from
+     any status *other* than `open` silently reported a stake of zero against an
+     empty mint. The position is a fact about the run, not about what the badge
+     currently happens to be showing, so it is held as one. */
+  const position = useRef<{ lamportsIn: string; mint: string } | null>(null);
 
   const open = useCallback(async () => {
     // No wallet, no derived wallet, no trade. The run still happens — the badge
@@ -128,12 +132,14 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
       });
 
       ticket.current = body.ticket;
+      position.current = { lamportsIn: body.lamports, mint: body.mint };
       setTrade({ status: "open", lamportsIn: body.lamports, mint: body.mint });
     } catch (error) {
       /* A failed buy must not take the game down with it. The run is the
          product; the trade is the garnish. So this resolves rather than throws —
          the badge says the position never opened, and the player still plays. */
       ticket.current = null;
+      position.current = null;
       setTrade({
         status: "failed",
         message: error instanceof Error ? error.message : "Trade failed.",
@@ -152,8 +158,8 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
     // The stake and the token are read off the open position rather than
     // re-derived, so a close is always reported against what was actually paid
     // for what was actually bought.
-    const lamportsIn = trade.status === "open" ? trade.lamportsIn : "0";
-    const mint = trade.status === "open" ? trade.mint : "";
+    const lamportsIn = position.current?.lamportsIn ?? "0";
+    const mint = position.current?.mint ?? "";
     setTrade({ status: "closing", lamportsIn, mint });
 
     try {
@@ -168,6 +174,8 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) throw new Error(body.error ?? "Could not close.");
 
+      position.current = null;
+
       setTrade({
         status: "closed",
         lamportsIn,
@@ -176,52 +184,22 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
         mint: body.mint,
       });
     } catch (error) {
+      position.current = null;
       setTrade({
         status: "failed",
         message: error instanceof Error ? error.message : "Could not close.",
       });
     }
-  }, [trade]);
-
-  /**
-   * He died. The position is left where it is.
-   *
-   * No request, no swap, nothing sent — the ticket is simply dropped. The server
-   * holds it for a few more minutes and then sweeps it (see `positions.ts`), and
-   * the tokens it named stay in the game wallet unsold. That is the whole of the
-   * penalty, and it is now a real one in a way it was not before: the wallet being
-   * drained is the *player's*, so the SOL that bought those tokens was theirs.
-   *
-   * The tokens are stranded rather than burned — they are still sitting there, in
-   * a mint nothing will ever ask about again. They are not, however, recoverable
-   * by playing on: each dead run strands a *different* random token, so a later
-   * goal sells only its own and cannot sweep the pile. That is a change from the
-   * single-token version, where a goal cashed out every abandoned position at once.
-   *
-   * Synchronous, precisely because there is nothing to await. A death costs the
-   * player nothing in time — only in money.
-   */
-  const abandon = useCallback(() => {
-    if (!ticket.current) return;
-    ticket.current = null;
-
-    setTrade((held) =>
-      // Only a position that was actually open can be lost. If the buy failed,
-      // there is nothing to abandon and the badge keeps saying so — telling the
-      // player they lost a stake they never spent would be a lie.
-      held.status === "open"
-        ? { status: "lost", lamportsIn: held.lamportsIn, mint: held.mint }
-        : held,
-    );
   }, []);
 
   const reset = useCallback(() => {
     ticket.current = null;
+    position.current = null;
     setTrade({ status: "idle" });
   }, []);
 
   return (
-    <Context.Provider value={{ trade, open, close, abandon, reset }}>
+    <Context.Provider value={{ trade, open, close, reset }}>
       {children}
     </Context.Provider>
   );

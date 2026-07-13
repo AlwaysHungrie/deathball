@@ -800,10 +800,11 @@ async function tokenBalance(
  * token account the buy creates. Checked against a float rather than the stake
  * alone, for the reason given at `MIN_LAMPORTS`.
  *
- * This wallet drains. Every run that ends without a goal abandons its position —
- * the tokens are never sold and the SOL that bought them is gone — so an empty
- * wallet is where a long session *ends up*, not a sign that anything is broken.
- * The throw becomes a `NO TRADE` badge and the football goes on unwagered.
+ * This wallet drains. Every run round-trips the curve, and a round trip pays pump's
+ * fee twice and the network's twice, so a session of runs where the token did
+ * nothing at all still grinds the balance down — an empty wallet is where a long
+ * session *ends up*, not a sign that anything is broken. The throw becomes an
+ * `ERROR` badge and the football goes on unwagered.
  *
  * It is the player's wallet now, though, which changes what this message means.
  * It used to say the house was out of money. It now says *they* are, and the way
