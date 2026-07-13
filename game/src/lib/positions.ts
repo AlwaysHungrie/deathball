@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Position } from "@/lib/jupiter";
+import type { Position } from "@/lib/pump";
 
 /**
  * Open positions, from kickoff to the final whistle.

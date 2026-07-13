@@ -168,7 +168,6 @@ function Badge({ ticket, onBuy }: { ticket: Ticket; onBuy: () => void }) {
       // The game wallet's balance — the money that actually gets bet.
       return (
         <span className={frame} title={`Game wallet: ${ticket.gameWallet}`}>
-          <span className="mr-1 text-blood">◆</span>
           {formatSol(ticket.lamports)} <span className="opacity-60">SOL</span>
         </span>
       );

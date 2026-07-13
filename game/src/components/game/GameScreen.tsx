@@ -99,34 +99,30 @@ export default function GameScreen() {
             className="absolute inset-0 bg-linear-to-b from-black via-black/80 to-black/60"
           />
 
-          {state === "ended" && (
-            <>
-              {/* The way out. Only once the run is dead: offering it on the
-                  pre-kickoff curtain would be a door out of a room he has not entered
-                  yet. Mirrors the close button on the start screen's own curtain —
-                  same box, opposite corner. */}
-              <button
-                type="button"
-                onClick={() => router.push("/")}
-                aria-label="Back to the start"
-                className="absolute top-4 left-4 z-10 border-2 border-neutral-100/70 bg-neutral-950/70 p-2 text-neutral-100 transition-colors hover:bg-neutral-100 hover:text-neutral-950 active:translate-y-px"
-              >
-                <Home width={20} height={20} aria-hidden />
-              </button>
+          <button
+            type="button"
+            onClick={() => router.push("/")}
+            aria-label="Back to the start"
+            className="absolute top-4 left-4 z-10 border-2 border-neutral-100/70 bg-neutral-950/70 p-2 text-neutral-100 transition-colors hover:bg-neutral-100 hover:text-neutral-950 active:translate-y-px"
+          >
+            <Home width={20} height={20} aria-hidden />
+          </button>
 
-              <h1 className="relative text-center text-5xl leading-tight text-blood drop-shadow-[3px_3px_0_rgba(0,0,0,0.8)]">
-                {scored ? (
-                  "GOAL"
-                ) : (
-                  <>
-                    GAME
-                    <br />
-                    OVER
-                  </>
-                )}
-              </h1>
-            </>
-          )}
+          <h1 className="relative text-center text-5xl leading-tight text-blood drop-shadow-[3px_3px_0_rgba(0,0,0,0.8)]">
+            {state === "ended" ? (
+              scored ? (
+                "GOAL"
+              ) : (
+                <>
+                  GAME
+                  <br />
+                  OVER
+                </>
+              )
+            ) : (
+              "PICK YOUR TEAM"
+            )}
+          </h1>
 
           {/* The odds board is hidden for now. It still governs the run — the shot is
               gated on `isFavourite`, which reads the same market — it is simply not on

@@ -65,24 +65,24 @@ export function useRun() {
       if (buying) return;
       setBuying(true);
 
-      // Last run's badge goes with it. It says what the *previous* position closed
-      // at, and leaving it up through the next buy would have it contradicting the
-      // one now being opened.
-      resetTrade();
+      // // Last run's badge goes with it. It says what the *previous* position closed
+      // // at, and leaving it up through the next buy would have it contradicting the
+      // // one now being opened.
+      // resetTrade();
 
       await openPosition();
 
-      /* Let the badge land before the pitch takes the screen back. The counter
-         rolls for 12 steps at 40ms; without this the -$0.05 would be torn away at
-         the exact moment it finished counting, and the player would watch a number
-         move and never see what it moved to. */
-      await new Promise((settle) => setTimeout(settle, 900));
+      // /* Let the badge land before the pitch takes the screen back. The counter
+      //    rolls for 12 steps at 40ms; without this the -$0.05 would be torn away at
+      //    the exact moment it finished counting, and the player would watch a number
+      //    move and never see what it moved to. */
+      // await new Promise((settle) => setTimeout(settle, 900));
 
-      setSide(forSide);
-      setRunId((id) => id + 1);
-      setScored(false);
-      setState("playing");
-      setBuying(false);
+      // setSide(forSide);
+      // setRunId((id) => id + 1);
+      // setScored(false);
+      // setState("playing");
+      // setBuying(false);
     },
     [buying, openPosition, resetTrade],
   );

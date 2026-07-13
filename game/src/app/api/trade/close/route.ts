@@ -1,23 +1,27 @@
-import { closePosition, TradeError } from "@/lib/jupiter";
 import { claim } from "@/lib/positions";
+import { closePosition, TradeError } from "@/lib/pump";
 
 /**
- * Final whistle: liquidate the position the run opened with.
+ * Final whistle: sell the token the run opened with, back into the curve it came
+ * from, out of the wallet that bought it.
  *
- * The ticket names it. Whatever the token did while the ball was in play is what
- * comes back — usually about five cents, sometimes a little more, sometimes a
- * little less, and that difference is the only thing the game was ever really
- * betting on.
+ * Whatever that token did while the ball was in play is what comes back — usually
+ * about what went in, sometimes more, sometimes less, and that difference is the
+ * only thing the game was ever really betting on.
+ *
+ * The wallet is re-derived from the position's own record of its owner, not from
+ * anything the browser sends. A ticket names a position; it does not name a
+ * wallet to raid.
  */
 
 export type CloseTradeResponse = {
-  /** Dollars back — the whole pile, not just this run's stake. */
-  usdOut: number;
-  /** usdOut - usdIn, against *this run's* stake. The badge colours off the sign. */
-  pnl: number;
+  /** Lamports back. A string — JSON has no bigint. */
+  lamports: string;
+  /** Against what the open leg cost. The badge colours off the sign. */
+  pnl: string;
   signature: string;
-  /** Dead positions this goal rescued, one per past death. Zero on a clean run. */
-  rescued: number;
+  /** What was sold. The badge names it, since the player never chose it. */
+  mint: string;
 };
 
 export const dynamic = "force-dynamic";
@@ -29,9 +33,9 @@ export async function POST(request: Request): Promise<Response> {
       return Response.json({ error: "No ticket." }, { status: 400 });
     }
 
-    // Gone means gone: an unknown ticket is an expired run, a restarted server,
-    // or a second close for a position already sold. None of them should send a
-    // swap — that would sell tokens this run does not own.
+    // Gone means gone: an unknown ticket is an expired run, a restarted server, or
+    // a second close for a position already sold. None of them should send a swap —
+    // that would sell tokens this run does not own.
     const position = claim(ticket);
     if (!position) {
       return Response.json(
@@ -43,10 +47,10 @@ export async function POST(request: Request): Promise<Response> {
     const closed = await closePosition(position);
 
     const body: CloseTradeResponse = {
-      usdOut: closed.usdOut,
+      lamports: closed.lamports,
       pnl: closed.pnl,
       signature: closed.signature,
-      rescued: closed.rescued,
+      mint: closed.mint,
     };
     return Response.json(body);
   } catch (error) {

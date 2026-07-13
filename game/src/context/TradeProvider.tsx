@@ -1,5 +1,6 @@
 "use client";
 
+import { useWalletUi } from "@wallet-ui/react";
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import type { CloseTradeResponse } from "@/app/api/trade/close/route";
 import type { OpenTradeResponse } from "@/app/api/trade/open/route";
@@ -13,9 +14,11 @@ import type { OpenTradeResponse } from "@/app/api/trade/open/route";
  * re-renders them under the provider without remounting it, so the ticket
  * survives the trip.
  *
- * The trade itself happens on the server. Nothing here signs anything; this
- * holds the state of a trade someone else is making, and gives the badge
- * something to animate.
+ * The trade itself happens on the server. Nothing here signs anything — but it
+ * does have to say *who* the server should sign for: the wallet that pays is
+ * derived from the connected address, so the address is sent with the buy. It is
+ * the address and only the address; the key never leaves the server, and the
+ * browser could not produce it if it wanted to.
  */
 
 /** What the badge is showing, and what the run is doing.
@@ -25,28 +28,31 @@ import type { OpenTradeResponse } from "@/app/api/trade/open/route";
  *  - `open`      — bought. The run is live and the money is in the market.
  *  - `closing`   — the sell is in flight. Only ever reached by scoring.
  *  - `closed`    — sold. The badge shows what came back.
- *  - `lost`      — he died, so the position was never sold. The five cents are
- *                  gone: the tokens sit in the wallet and the SOL that bought
- *                  them does not come back. This is the cost of missing.
+ *  - `lost`      — he died, so the position was never sold. The stake is gone:
+ *                  the tokens sit in the wallet and the SOL that bought them does
+ *                  not come back. This is the cost of missing.
  *  - `failed`    — the trade did not happen at all. Says why, and the run goes
  *                  on regardless — including when the wallet is too empty to
  *                  fund a position, which is a normal end state here rather than
- *                  an error, because deaths drain it. */
+ *                  an error, because deaths drain it.
+ *
+ * Everything is in lamports, as strings, because that is what the server can
+ * honestly say. The token is a random devnet pump.fun mint and nothing prices
+ * those, so a dollar figure would be a number the badge made up. */
 export type Trade =
   | { status: "idle" }
   | { status: "opening" }
-  | { status: "open"; usdIn: number }
-  | { status: "closing"; usdIn: number }
+  | { status: "open"; lamportsIn: string; mint: string }
+  | { status: "closing"; lamportsIn: string; mint: string }
   | {
       status: "closed";
-      usdIn: number;
-      /** The whole pile, cashed out — this run's stake plus every dead one. */
-      usdOut: number;
-      pnl: number;
-      /** Dead positions this goal rescued. Zero on a clean run. */
-      rescued: number;
+      lamportsIn: string;
+      lamportsOut: string;
+      /** lamportsOut - lamportsIn. Negative is a loss, and the badge says so. */
+      pnl: string;
+      mint: string;
     }
-  | { status: "lost"; usdIn: number }
+  | { status: "lost"; lamportsIn: string; mint: string }
   | { status: "failed"; message: string };
 
 type TradeContext = {
@@ -75,24 +81,54 @@ const Context = createContext<TradeContext | null>(null);
 export function TradeProvider({ children }: { children: React.ReactNode }) {
   const [trade, setTrade] = useState<Trade>({ status: "idle" });
 
+  /* Whose wallet pays. The server derives the key from this, so a disconnected
+     wallet cannot open a position — there is nobody to spend for.
+
+     Pulled out of the account here rather than read inside `open`, so that what
+     the callback closes over is the address itself. Closing over `account` would
+     re-create `open` whenever any *other* field of it changed, and the compiler
+     rightly refuses to accept a narrower dependency than the one it can see. */
+  const { account } = useWalletUi();
+  const owner = account?.address;
+
   /* The ticket names the position on the server. It is deliberately a ref and
      not state: nothing renders it, and putting it in state would re-render the
      whole tree on open for a value only `close` ever reads. */
   const ticket = useRef<string | null>(null);
 
   const open = useCallback(async () => {
+    // No wallet, no derived wallet, no trade. The run still happens — the badge
+    // says why it happened for nothing.
+    if (!owner) {
+      setTrade({ status: "failed", message: "Connect a wallet to place a bet." });
+      return;
+    }
+
     setTrade({ status: "opening" });
 
     try {
-      const response = await fetch("/api/trade/open", { method: "POST" });
+      const response = await fetch("/api/trade/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner }),
+      });
       const body = (await response.json()) as OpenTradeResponse & {
         error?: string;
       };
 
       if (!response.ok) throw new Error(body.error ?? "Trade failed.");
 
+      /* What was bought, and what it cost. Logged rather than rendered: the badge
+         says the number and nothing else, and a mint address on screen would be
+         forty-four characters of noise over a game of football. It is here so the
+         run can be audited from the console while the mechanic is being tuned. */
+      console.log("[trade] bought", body.mint, {
+        lamports: body.lamports,
+        signature: body.signature,
+      });
+
       ticket.current = body.ticket;
-      setTrade({ status: "open", usdIn: body.usdIn });
+      setTrade({ status: "open", lamportsIn: body.lamports, mint: body.mint });
     } catch (error) {
       /* A failed buy must not take the game down with it. The run is the
          product; the trade is the garnish. So this resolves rather than throws —
@@ -103,7 +139,7 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
         message: error instanceof Error ? error.message : "Trade failed.",
       });
     }
-  }, []);
+  }, [owner]);
 
   const close = useCallback(async () => {
     // Nothing to sell: the buy failed, or there was never a position. Either way
@@ -113,10 +149,12 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
     const held = ticket.current;
     ticket.current = null;
 
-    // The stake is read off the open position rather than re-derived, so a close
-    // is always reported against what was actually paid.
-    const usdIn = trade.status === "open" ? trade.usdIn : 0;
-    setTrade({ status: "closing", usdIn });
+    // The stake and the token are read off the open position rather than
+    // re-derived, so a close is always reported against what was actually paid
+    // for what was actually bought.
+    const lamportsIn = trade.status === "open" ? trade.lamportsIn : "0";
+    const mint = trade.status === "open" ? trade.mint : "";
+    setTrade({ status: "closing", lamportsIn, mint });
 
     try {
       const response = await fetch("/api/trade/close", {
@@ -132,10 +170,10 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
 
       setTrade({
         status: "closed",
-        usdIn,
-        usdOut: body.usdOut,
+        lamportsIn,
+        lamportsOut: body.lamports,
         pnl: body.pnl,
-        rescued: body.rescued,
+        mint: body.mint,
       });
     } catch (error) {
       setTrade({
@@ -150,8 +188,15 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
    *
    * No request, no swap, nothing sent — the ticket is simply dropped. The server
    * holds it for a few more minutes and then sweeps it (see `positions.ts`), and
-   * the tokens it named stay in the wallet unsold. That is the whole of the
-   * penalty, and it is a real one: the SOL that bought them is not coming back.
+   * the tokens it named stay in the game wallet unsold. That is the whole of the
+   * penalty, and it is now a real one in a way it was not before: the wallet being
+   * drained is the *player's*, so the SOL that bought those tokens was theirs.
+   *
+   * The tokens are stranded rather than burned — they are still sitting there, in
+   * a mint nothing will ever ask about again. They are not, however, recoverable
+   * by playing on: each dead run strands a *different* random token, so a later
+   * goal sells only its own and cannot sweep the pile. That is a change from the
+   * single-token version, where a goal cashed out every abandoned position at once.
    *
    * Synchronous, precisely because there is nothing to await. A death costs the
    * player nothing in time — only in money.
@@ -163,8 +208,10 @@ export function TradeProvider({ children }: { children: React.ReactNode }) {
     setTrade((held) =>
       // Only a position that was actually open can be lost. If the buy failed,
       // there is nothing to abandon and the badge keeps saying so — telling the
-      // player they lost five cents they never spent would be a lie.
-      held.status === "open" ? { status: "lost", usdIn: held.usdIn } : held,
+      // player they lost a stake they never spent would be a lie.
+      held.status === "open"
+        ? { status: "lost", lamportsIn: held.lamportsIn, mint: held.mint }
+        : held,
     );
   }, []);
 
