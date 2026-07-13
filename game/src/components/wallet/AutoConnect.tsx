@@ -80,18 +80,27 @@ function Reconnect({ wallet }: { wallet: UiWallet }) {
        wallet-ui's `useWalletUiWallet`, whose input type omits `silent` — and
        `silent` is the whole point. Without it, this is the ordinary approval
        popup, fired unbidden on every page load, which is worse than the button
-       it set out to save. */
-    const { connect } = getWalletFeature(
-      wallet,
-      "standard:connect",
-    ) as StandardConnectFeature;
+       it set out to save. `getWalletFeature` throws — synchronously, rather
+       than rejecting — if the wallet behind this handle unregisters between
+       the render that found it and the effect that asks it, which a wallet
+       extension reloading will do. Nothing here can tell that apart from any
+       other reason a silent reconnect fails, so it folds into the same no-op
+       catch below. */
+    try {
+      const { connect } = getWalletFeature(
+        wallet,
+        "standard:connect",
+      ) as StandardConnectFeature;
 
-    // Nothing to do with the result. A wallet that hands back accounts has
-    // re-announced itself with them, and that is what wallet-ui's restore has
-    // been waiting for; a wallet that hands back none, or throws, leaves the
-    // player disconnected, which is the state the screen already knows how to
-    // show. Either way there is nothing here worth reporting.
-    connect({ silent: true }).catch(() => {});
+      // Nothing to do with the result. A wallet that hands back accounts has
+      // re-announced itself with them, and that is what wallet-ui's restore has
+      // been waiting for; a wallet that hands back none, or throws, leaves the
+      // player disconnected, which is the state the screen already knows how to
+      // show. Either way there is nothing here worth reporting.
+      connect({ silent: true }).catch(() => {});
+    } catch {
+      // See above: a stale handle throws synchronously rather than rejecting.
+    }
   }, [wallet]);
 
   return null;
