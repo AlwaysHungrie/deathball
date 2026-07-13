@@ -117,6 +117,18 @@ async function main() {
   gif.finish();
   writeFileSync("public/nft/ticket.gif", Buffer.from(gif.bytes()));
   console.log(`wrote public/nft/ticket.gif — ${GOAL.frames} frames at ${FPS}fps`);
+
+  /* Writing the file is no longer the end of it. Nothing reads this path any
+     more: the ticket's artwork is served from the bucket, because that is where
+     the on-chain metadata points and the app is not allowed to be the thing that
+     has to stay up for an NFT to keep working. What is on disk is the source; what
+     is in the bucket is what exists. Re-rendering without uploading changes
+     nothing anyone can see. */
+  console.log(
+    "\nnot live yet — upload it:\n" +
+      "  npx wrangler r2 object put deathball-nft/ticket.gif \\\n" +
+      "    --file=public/nft/ticket.gif --content-type=image/gif --remote",
+  );
 }
 
 await main();

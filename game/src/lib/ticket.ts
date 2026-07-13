@@ -22,6 +22,7 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { gameWallet } from "@/lib/derive";
+import { TICKET_METADATA_URI } from "@/lib/ticket-assets";
 
 /**
  * The World Cup Ticket.
@@ -62,6 +63,7 @@ const TICKET_FUNDING_LAMPORTS = BigInt(
   TICKET_FUNDING_SOL * Number(LAMPORTS_PER_SOL),
 );
 
+
 /* -- Metaplex Core --------------------------------------------------------- */
 
 const CORE_PROGRAM = address("CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d");
@@ -89,16 +91,15 @@ const TICKET_NAME = "Deathball World Cup Ticket";
 function config() {
   const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_DEVNET_RPC_URL;
   const treasuryKey = process.env.TREASURY_WALLET_SECRET_KEY;
-  const origin = process.env.NEXT_PUBLIC_APP_ORIGIN;
 
   if (!rpcUrl) throw new TicketError("NEXT_PUBLIC_SOLANA_DEVNET_RPC_URL is not set.");
   if (!treasuryKey) throw new TicketError("TREASURY_WALLET_SECRET_KEY is not set.");
-  // The metadata URI is baked into the asset on chain and can never be changed,
-  // so it has to be an absolute URL that will still resolve later. A relative
-  // path would mint an NFT pointing at nothing.
-  if (!origin) throw new TicketError("NEXT_PUBLIC_APP_ORIGIN is not set.");
 
-  return { rpcUrl, treasuryKey, origin };
+  // No origin here any more. The metadata the mint points at is a file in a
+  // bucket — `TICKET_METADATA_URI` — and not a route this app serves, so where
+  // this app happens to be running is no longer something the asset records
+  // forever.
+  return { rpcUrl, treasuryKey };
 }
 
 /** A purchase that did not happen, and why. The UI reports these; anything else
@@ -290,7 +291,7 @@ export type TicketPurchase = {
 export async function buildPurchase(
   buyerAddress: string,
 ): Promise<TicketPurchase> {
-  const { rpcUrl, treasuryKey, origin } = config();
+  const { rpcUrl, treasuryKey } = config();
   const rpc = createSolanaRpc(rpcUrl);
 
   const buyer = address(buyerAddress);
@@ -325,7 +326,7 @@ export async function buildPurchase(
             owner: buyer,
             authority,
             name: TICKET_NAME,
-            uri: `${origin}/api/ticket/metadata`,
+            uri: TICKET_METADATA_URI,
           }),
         ],
         m,

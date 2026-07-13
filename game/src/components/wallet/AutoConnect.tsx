@@ -5,7 +5,7 @@ import {
   useWalletUi,
   type UiWallet,
 } from "@wallet-ui/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { accountStorage } from "@/context/SolanaProvider";
 
 /**
@@ -40,11 +40,20 @@ import { accountStorage } from "@/context/SolanaProvider";
 export default function AutoConnect() {
   const { wallets, connected } = useWalletUi();
 
+  /* Subscribed to, not merely read.
+
+     This is what makes EXIT stick. Leaving clears the saved key, and a plain
+     `.get()` here would not notice — it would be read again on the next render
+     for some unrelated reason, find a wallet still trusted, and quietly reconnect
+     the player who had just asked to leave. Subscribing means clearing the key
+     *is* the signal: this re-renders with nothing saved, and the reconnect below
+     unmounts. */
+  const saved = useSyncExternalStore(subscribe, getSaved, getNothing);
+
   // The saved key is `name:address`, so the name in front of the colon says who
   // to ask. It is not a claim that the site is still trusted — the wallet has
   // the only vote on that, and casts it by answering with accounts or with none.
-  const savedName = accountStorage.get()?.split(":")[0];
-  const wallet = wallets.find((w) => w.name === savedName);
+  const wallet = wallets.find((w) => w.name === saved?.split(":")[0]);
 
   if (!wallet || connected) return null;
 
@@ -92,3 +101,18 @@ function Reconnect({ wallet }: { wallet: UiWallet }) {
 type StandardConnectFeature = {
   connect: (input?: { silent?: boolean }) => Promise<unknown>;
 };
+
+/* Out here, and not inlined at the call, because `useSyncExternalStore`
+   resubscribes whenever the function it is handed changes identity — and these
+   would be new closures on every render. Worse, `storage.value` builds a *fresh*
+   atom each time it is read, so an inline subscriber would be resubscribing to a
+   new throwaway store on every pass. One subscription, made once, to the one
+   store. */
+const subscribe = (onChange: () => void) =>
+  accountStorage.value.subscribe(onChange);
+
+const getSaved = () => accountStorage.get();
+
+// Nothing is saved on the server: there is no storage there, and no wallet to
+// reconnect even if there were.
+const getNothing = () => undefined;

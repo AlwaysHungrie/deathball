@@ -34,7 +34,7 @@ export default function StartScreen() {
      of them instead would be two requests for one answer, and — worse — two
      answers, free to disagree with each other about whether the player has
      bought in. */
-  const { ticket, refresh: refreshTicket } = useTicket();
+  const { ticket, settle: settleTicket } = useTicket();
 
   const [started, setStarted] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -115,7 +115,7 @@ export default function StartScreen() {
             BALL
           </h1>
           <p className="text-[10px] leading-relaxed text-neutral-400">
-            Score with your team.
+            Every goal... is a scream.
           </p>
 
           {/* No wallet, no ticket, no match. The primary button carries whichever
@@ -208,14 +208,16 @@ export default function StartScreen() {
 
         <WalletDialog open={picking} onClose={() => setPicking(false)} />
 
-        {/* Buying re-reads the ticket rather than assuming it worked: the mint
-            lands in the player's wallet, but the 0.05 SOL it pays for is sent by
-            the server afterwards, and only a fresh read knows whether it has. */}
+        {/* Buying is not over when the wallet says so. The mint lands in the
+            player's wallet, but the 0.05 SOL it pays for is sent by the server
+            afterwards, once it can see the mint on chain — so the dialog holds
+            its spinner until a read comes back with a ticket *and* a funded game
+            wallet. `settle` is that read, and it is what the dialog awaits. */}
         <BuyTicketDialog
           open={buying}
           ticket={ticket}
           onClose={() => setBuying(false)}
-          onBought={refreshTicket}
+          onBought={settleTicket}
         />
 
         <WrongNetworkDialog />
