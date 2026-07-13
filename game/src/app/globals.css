@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  /* Sprite palette drives the UI accents. */
+  --pitch: #2f7a3f;
+  --blood: #c0392b;
+  /* Money, when it comes back up. Deliberately *not* --pitch: the grass is a
+     dark, desaturated green built to sit behind sprites, and on the black curtain
+     it reads as mud rather than as a win. This is its counterpart to --blood —
+     the same job, the other direction — so it wants the same lift off the
+     background that the red already has. */
+  --cash: #3ddc84;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-pitch: var(--pitch);
+  --color-blood: var(--blood);
+  --color-cash: var(--cash);
+  --font-pixel: var(--font-press-start);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-press-start), monospace;
+  /* Fixed phone stage — never rubber-band or scroll it. */
+  overscroll-behavior: none;
+}
+
+/* Sprites are 16x20 pixel art. Never let the browser smooth them. */
+canvas,
+img[data-pixel] {
+  image-rendering: pixelated;
+}
+
+/* Start-screen curtain. Slides in from above the stage and settles over the
+   upper half; the gradient bottoms out 40px into the pitch so the grass, goal
+   and player stay lit. */
+@keyframes curtain-drop {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.curtain {
+  animation: curtain-drop 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Game-over curtain. Same idea, but it drops onto a pitch that is already there
+   rather than onto an empty stage, so it only travels a short way — enough to
+   read as arriving, not far enough to wipe the game off the screen on its way in.
+   The fade does the work; the slide is just the accent on it.
+
+   Slow, and eased evenly at both ends. The run has just been cut short, so this
+   wants to sink in rather than land: a fast curve that decelerates hard reads as
+   a snap, which is the wrong note to end on. */
+@keyframes curtain-settle {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.curtain-settle {
+  animation: curtain-settle 900ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .curtain,
+  .curtain-settle {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* 8-bit spinner: a ring of square pips rotated in whole eighths. Stepping the
+   rotation is what sells it — a smooth sweep would read as a modern spinner. */
+@keyframes pip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pip-ring {
+  animation: pip-spin 800ms steps(8, end) infinite;
+}

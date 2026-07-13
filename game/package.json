@@ -1,0 +1,37 @@
+{
+  "name": "game",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@solana-program/system": "^0.12.2",
+    "@solana/kit": "^6.10.0",
+    "@wallet-ui/react": "^4.2.0",
+    "gifenc": "^1.0.3",
+    "motion": "^12.42.2",
+    "next": "16.2.10",
+    "pixelarticons": "^2.2.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "overrides": {
+    "@wallet-standard/ui-registry": "1.1.1",
+    "@wallet-standard/ui": "1.0.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "canvas": "^3.2.3",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

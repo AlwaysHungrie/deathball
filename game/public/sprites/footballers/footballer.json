@@ -1,0 +1,21 @@
+{
+  "frameWidth": 16,
+  "frameHeight": 20,
+  "columns": 4,
+  "rows": 6,
+  "animations": {
+    "idle": { "row": 0, "frames": [0, 1, 2, 3], "fps": 6, "loop": true },
+    "walk_down": { "row": 1, "frames": [0, 1, 2, 3], "fps": 10, "loop": true },
+    "walk_up": { "row": 2, "frames": [0, 1, 2, 3], "fps": 10, "loop": true },
+    "walk_right": { "row": 3, "frames": [0, 1, 2, 3], "fps": 10, "loop": true },
+    "walk_left": { "row": 4, "frames": [0, 1, 2, 3], "fps": 10, "loop": true },
+    "death": { "row": 5, "frames": [0], "fps": 1, "loop": false }
+  },
+  "teams": [
+    "sanlorenzo",
+    "bocajuniors",
+    "riverplate",
+    "independiente",
+    "argentina"
+  ]
+}
