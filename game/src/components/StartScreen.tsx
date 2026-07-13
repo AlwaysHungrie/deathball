@@ -157,7 +157,10 @@ export default function StartScreen() {
                   CHECKING TICKET
                 </button>
               )}
-              <button className="mt-2 border-4 border-neutral-100 px-3 py-3 text-[10px] text-neutral-400 transition-transform hover:scale-105 active:translate-y-1">
+              <button
+                onClick={() => router.push("/how-to-play")}
+                className="mt-2 border-4 border-neutral-100 px-3 py-3 text-[10px] text-neutral-400 transition-transform hover:scale-105 active:translate-y-1"
+              >
                 HOW TO PLAY
               </button>
             </div>
